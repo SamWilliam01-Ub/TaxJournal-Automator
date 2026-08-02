@@ -1,0 +1,976 @@
+     1→     1→"use client";
+     2→     2→
+     3→     3→import * as React from "react";
+     4→     4→import {
+     5→     5→  Calculator,
+     6→     6→  ClipboardCopy,
+     7→     7→  ClipboardCheck,
+     8→     8→  ReceiptText,
+     9→     9→  Wallet,
+    10→    10→  Landmark,
+    11→    11→  Scale,
+    12→    12→  Info,
+    13→    13→  Building2,
+    14→    14→  Briefcase,
+    15→    15→  GraduationCap,
+    16→    16→  Cog,
+    17→    17→  Sparkles,
+    18→    18→  RefreshCw,
+    19→    19→  FileSpreadsheet,
+    20→    20→  CalendarDays,
+    21→    21→  Hash,
+    22→    22→  ShieldCheck,
+    23→    23→  AlertTriangle,
+    24→    24→} from "lucide-react";
+    25→    25→
+    26→    26→import { Button } from "@/components/ui/button";
+    27→    27→import {
+    28→    28→  Card,
+    29→    29→  CardContent,
+    30→    30→  CardDescription,
+    31→    31→  CardFooter,
+    32→    32→  CardHeader,
+    33→    33→  CardTitle,
+    34→    34→} from "@/components/ui/card";
+    35→    35→import { Input } from "@/components/ui/input";
+    36→    36→import { Label } from "@/components/ui/label";
+    37→    37→import { Textarea } from "@/components/ui/textarea";
+    38→    38→import {
+    39→    39→  Select,
+    40→    40→  SelectContent,
+    41→    41→  SelectGroup,
+    42→    42→  SelectItem,
+    43→    43→  SelectLabel,
+    44→    44→  SelectTrigger,
+    45→    45→  SelectValue,
+    46→    46→} from "@/components/ui/select";
+    47→    47→import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+    48→    48→import {
+    49→    49→  Table,
+    50→    50→  TableBody,
+    51→    51→  TableCell,
+    52→    52→  TableFooter,
+    53→    53→  TableHead,
+    54→    54→  TableHeader,
+    55→    55→  TableRow,
+    56→    56→} from "@/components/ui/table";
+    57→    57→import { Badge } from "@/components/ui/badge";
+    58→    58→import { Separator } from "@/components/ui/separator";
+    59→    59→import {
+    60→    60→  Tooltip,
+    61→    61→  TooltipContent,
+    62→    62→  TooltipProvider,
+    63→    63→  TooltipTrigger,
+    64→    64→} from "@/components/ui/tooltip";
+    65→    65→import { useToast } from "@/hooks/use-toast";
+    66→    66→
+    67→    67→import {
+    68→    68→  CATEGORIES,
+    69→    69→  calculateTax,
+    70→    70→  formatRate,
+    71→    71→  formatRupiah,
+    72→    72→  journalToClipboardText,
+    73→    73→  type CategoryId,
+    74→    74→  type NpwpStatus,
+    75→    75→  type TaxResult,
+    76→    76→} from "@/lib/tax";
+    77→    77→import { cn } from "@/lib/utils";
+    78→    78→
+    79→    79→const CATEGORY_ICON: Record<CategoryId, React.ElementType> = {
+    80→    80→  A: Building2,
+    81→    81→  B: Briefcase,
+    82→    82→  C: GraduationCap,
+    83→    83→  D: Cog,
+    84→    84→};
+    85→    85→
+    86→    86→function todayISO(): string {
+    87→    87→  // Local date in Asia/Jakarta — kept simple, avoids TZ drift in input[type=date]
+    88→    88→  const now = new Date();
+    89→    89→  const tz = "Asia/Jakarta";
+    90→    90→  const fmt = new Intl.DateTimeFormat("sv-SE", {
+    91→    91→    timeZone: tz,
+    92→    92→    year: "numeric",
+    93→    93→    month: "2-digit",
+    94→    94→    day: "2-digit",
+    95→    95→  });
+    96→    96→  return fmt.format(now); // YYYY-MM-DD
+    97→    97→}
+    98→    98→
+    99→    99→function formatDisplayDate(iso: string): string {
+   100→   100→  if (!iso) return "-";
+   101→   101→  const [y, m, d] = iso.split("-").map(Number);
+   102→   102→  if (!y || !m || !d) return iso;
+   103→   103→  const date = new Date(y, m - 1, d);
+   104→   104→  return new Intl.DateTimeFormat("id-ID", {
+   105→   105→    day: "2-digit",
+   106→   106→    month: "short",
+   107→   107→    year: "numeric",
+   108→   108→  }).format(date);
+   109→   109→}
+   110→   110→
+   111→   111→export default function TaxJournalAutomatorPage() {
+   112→   112→  const { toast } = useToast();
+   113→   113→
+   114→   114→  const [description, setDescription] = React.useState("");
+   115→   115→  const [bruto, setBruto] = React.useState<string>("");
+   116→   116→  const [categoryId, setCategoryId] = React.useState<CategoryId | "">("");
+   117→   117→  const [npwp, setNpwp] = React.useState<NpwpStatus>("yes");
+   118→   118→  const [date, setDate] = React.useState<string>(todayISO());
+   119→   119→
+   120→   120→  const [result, setResult] = React.useState<TaxResult | null>(null);
+   121→   121→  const [errors, setErrors] = React.useState<Record<string, string>>({});
+   122→   122→  const [copied, setCopied] = React.useState(false);
+   123→   123→
+   124→   124→  // Live preview of the effective rate for the currently selected category.
+   125→   125→  const selectedCategory = React.useMemo(
+   126→   126→    () => CATEGORIES.find((c) => c.id === categoryId) ?? null,
+   127→   127→    [categoryId]
+   128→   128→  );
+   129→   129→
+   130→   130→  function validate(): boolean {
+   131→   131→    const next: Record<string, string> = {};
+   132→   132→    if (!description.trim()) next.description = "Deskripsi transaksi wajib diisi.";
+   133→   133→    const brutoNum = Number(bruto.replace(/[^\d]/g, ""));
+   134→   134→    if (!bruto.trim()) next.bruto = "Nominal bruto wajib diisi.";
+   135→   135→    else if (Number.isNaN(brutoNum) || brutoNum <= 0)
+   136→   136→      next.bruto = "Nominal bruto harus berupa angka positif.";
+   137→   137→    if (!categoryId) next.category = "Pilih kategori transaksi terlebih dahulu.";
+   138→   138→    if (!date) next.date = "Tanggal transaksi wajib diisi.";
+   139→   139→    setErrors(next);
+   140→   140→    return Object.keys(next).length === 0;
+   141→   141→  }
+   142→   142→
+   143→   143→  function handleSubmit(e: React.FormEvent) {
+   144→   144→    e.preventDefault();
+   145→   145→    if (!validate()) {
+   146→   146→      toast({
+   147→   147→        title: "Form belum lengkap",
+   148→   148→        description: "Mohon periksa kembali isian yang ditandai.",
+   149→   149→        variant: "destructive",
+   150→   150→      });
+   151→   151→      return;
+   152→   152→    }
+   153→   153→    const brutoNum = Number(bruto.replace(/[^\d]/g, ""));
+   154→   154→    const res = calculateTax(
+   155→   155→      brutoNum,
+   156→   156→      categoryId as CategoryId,
+   157→   157→      npwp === "yes",
+   158→   158→      description.trim(),
+   159→   159→      date
+   160→   160→    );
+   161→   161→    setResult(res);
+   162→   162→    setCopied(false);
+   163→   163→    toast({
+   164→   164→      title: "Perhitungan selesai",
+   165→   165→      description: `Jurnal ${res.category.taxTypeShort} berhasil dibuat.`,
+   166→   166→    });
+   167→   167→
+   168→   168→    // Smooth scroll to results on mobile
+   169→   169→    setTimeout(() => {
+   170→   170→      document
+   171→   171→        .getElementById("hasil")
+   172→   172→        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+   173→   173→    }, 80);
+   174→   174→  }
+   175→   175→
+   176→   176→  function handleReset() {
+   177→   177→    setDescription("");
+   178→   178→    setBruto("");
+   179→   179→    setCategoryId("");
+   180→   180→    setNpwp("yes");
+   181→   181→    setDate(todayISO());
+   182→   182→    setResult(null);
+   183→   183→    setErrors({});
+   184→   184→    setCopied(false);
+   185→   185→  }
+   186→   186→
+   187→   187→  async function handleCopy() {
+   188→   188→    if (!result) return;
+   189→   189→    const text = journalToClipboardText(result);
+   190→   190→    try {
+   191→   191→      await navigator.clipboard.writeText(text);
+   192→   192→      setCopied(true);
+   193→   193→      toast({
+   194→   194→        title: "Disalin ke clipboard",
+   195→   195→        description: "Tempelkan (Ctrl+V) langsung ke Excel / Google Sheets.",
+   196→   196→      });
+   197→   197→      setTimeout(() => setCopied(false), 2500);
+   198→   198→    } catch {
+   199→   199→      // Fallback for browsers without async clipboard
+   200→   200→      const ta = document.createElement("textarea");
+   201→   201→      ta.value = text;
+   202→   202→      document.body.appendChild(ta);
+   203→   203→      ta.select();
+   204→   204→      try {
+   205→   205→        document.execCommand("copy");
+   206→   206→        setCopied(true);
+   207→   207→        toast({ title: "Disalin ke clipboard", description: "Jurnal siap ditempel ke Excel." });
+   208→   208→        setTimeout(() => setCopied(false), 2500);
+   209→   209→      } catch {
+   210→   210→        toast({
+   211→   211→          title: "Gagal menyalin",
+   212→   212→          description: "Salin manual dari tabel di bawah.",
+   213→   213→          variant: "destructive",
+   214→   214→        });
+   215→   215→      } finally {
+   216→   216→        document.body.removeChild(ta);
+   217→   217→      }
+   218→   218→    }
+   219→   219→  }
+   220→   220→
+   221→   221→  // Format the bruto input live for display, keep raw digits in state.
+   222→   222→  const brutoDisplay = React.useMemo(() => {
+   223→   223→    const digits = bruto.replace(/[^\d]/g, "");
+   224→   224→    if (!digits) return "";
+   225→   225→    return new Intl.NumberFormat("id-ID").format(Number(digits));
+   226→   226→  }, [bruto]);
+   227→   227→
+   228→   228→  return (
+   229→   229→    <div className="flex min-h-screen flex-col bg-gradient-to-b from-slate-50 via-white to-slate-50 dark:from-slate-950 dark:via-slate-950 dark:to-slate-900">
+   230→   230→      {/* ───────────────────────── Header ───────────────────────── */}
+   231→   231→      <header className="sticky top-0 z-40 border-b border-slate-200/70 bg-white/85 backdrop-blur-md dark:border-slate-800/70 dark:bg-slate-950/85">
+   232→   232→        <div className="mx-auto flex w-full max-w-6xl items-center gap-3 px-4 py-3 sm:px-6">
+   233→   233→          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm shadow-primary/30">
+   234→   234→            <Calculator className="h-5 w-5" />
+   235→   235→          </div>
+   236→   236→          <div className="min-w-0 flex-1">
+   237→   237→            <h1 className="truncate text-base font-bold tracking-tight text-slate-900 sm:text-lg dark:text-slate-50">
+   238→   238→              TaxJournal{" "}
+   239→   239→              <span className="text-primary">Automator</span>
+   240→   240→            </h1>
+   241→   241→            <p className="hidden truncate text-xs text-slate-500 sm:block dark:text-slate-400">
+   242→   242→              Otomasi perhitungan PPh &amp; jurnal akuntansi pemotong pajak
+   243→   243→              (Indonesia)
+   244→   244→            </p>
+   245→   245→          </div>
+   246→   246→          <Badge
+   247→   247→            variant="outline"
+   248→   248→            className="hidden items-center gap-1 border-primary/30 bg-primary/5 text-primary sm:flex"
+   249→   249→          >
+   250→   250→            <ShieldCheck className="h-3.5 w-3.5" />
+   251→   251→            MVP · UU HPP 2022
+   252→   252→          </Badge>
+   253→   253→        </div>
+   254→   254→      </header>
+   255→   255→
+   256→   256→      {/* ───────────────────────── Main ───────────────────────── */}
+   257→   257→      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 sm:py-8">
+   258→   258→        {/* Hero / intro */}
+   259→   259→        <section className="mb-6 sm:mb-8">
+   260→   260→          <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
+   261→   261→            <div className="flex items-start gap-3">
+   262→   262→              <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+   263→   263→                <ReceiptText className="h-5 w-5" />
+   264→   264→              </div>
+   265→   265→              <div>
+   266→   266→                <h2 className="text-lg font-semibold text-slate-900 sm:text-xl dark:text-slate-50">
+   267→   267→                  Hitung PPh &amp; Buat Jurnal dalam Hitungan Detik
+   268→   268→                </h2>
+   269→   269→                <p className="mt-1 max-w-3xl text-sm leading-relaxed text-slate-600 dark:text-slate-400">
+   270→   270→                  Masukkan deskripsi transaksi, nominal bruto, dan kategori.
+   271→   271→                  Sistem akan menghitung Dasar Pengenaan Pajak (DPP), pajak
+   272→   272→                  yang dipotong, neto yang dibayarkan, serta merangkai jurnal
+   273→   273→                  akuntansi Debit–Kredit yang seimbang secara otomatis.
+   274→   274→                </p>
+   275→   275→              </div>
+   276→   276→            </div>
+   277→   277→          </div>
+   278→   278→        </section>
+   279→   279→
+   280→   280→        <div className="grid grid-cols-1 gap-6 lg:grid-cols-5 lg:gap-7">
+   281→   281→          {/* ───────────── Form ───────────── */}
+   282→   282→          <section className="lg:col-span-2">
+   283→   283→            <Card className="overflow-hidden border-slate-200 shadow-sm dark:border-slate-800">
+   284→   284→              <CardHeader className="border-b border-slate-100 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-900/40">
+   285→   285→                <CardTitle className="flex items-center gap-2 text-base text-slate-900 dark:text-slate-50">
+   286→   286→                  <Hash className="h-4 w-4 text-primary" />
+   287→   287→                  Data Transaksi
+   288→   288→                </CardTitle>
+   289→   289→                <CardDescription className="text-xs">
+   290→   290→                  Lengkapi formulir di bawah, lalu tekan tombol Hitung.
+   291→   291→                </CardDescription>
+   292→   292→              </CardHeader>
+   293→   293→              <form onSubmit={handleSubmit} noValidate>
+   294→   294→                <CardContent className="space-y-5 p-5 sm:p-6">
+   295→   295→                  {/* Description */}
+   296→   296→                  <div className="space-y-2">
+   297→   297→                    <Label htmlFor="description" className="text-sm font-medium">
+   298→   298→                      Deskripsi Transaksi
+   299→   299→                      <span className="ml-0.5 text-destructive">*</span>
+   300→   300→                    </Label>
+   301→   301→                    <Textarea
+   302→   302→                      id="description"
+   303→   303→                      placeholder="Contoh: Pembayaran sewa kantor lantai 12 periode Januari 2025"
+   304→   304→                      value={description}
+   305→   305→                      onChange={(e) => setDescription(e.target.value)}
+   306→   306→                      rows={3}
+   307→   307→                      className={cn(
+   308→   308→                        "resize-none transition-colors",
+   309→   309→                        errors.description &&
+   310→   310→                          "border-destructive focus-visible:ring-destructive"
+   311→   311→                      )}
+   312→   312→                    />
+   313→   313→                    {errors.description && (
+   314→   314→                      <p className="text-xs text-destructive">
+   315→   315→                        {errors.description}
+   316→   316→                      </p>
+   317→   317→                    )}
+   318→   318→                  </div>
+   319→   319→
+   320→   320→                  {/* Bruto */}
+   321→   321→                  <div className="space-y-2">
+   322→   322→                    <Label htmlFor="bruto" className="text-sm font-medium">
+   323→   323→                      Nominal Bruto (Rp)
+   324→   324→                      <span className="ml-0.5 text-destructive">*</span>
+   325→   325→                    </Label>
+   326→   326→                    <div className="relative">
+   327→   327→                      <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm font-medium text-slate-400">
+   328→   328→                        Rp
+   329→   329→                      </span>
+   330→   330→                      <Input
+   331→   331→                        id="bruto"
+   332→   332→                        inputMode="numeric"
+   333→   333→                        autoComplete="off"
+   334→   334→                        placeholder="50.000.000"
+   335→   335→                        value={brutoDisplay}
+   336→   336→                        onChange={(e) => {
+   337→   337→                          const digits = e.target.value.replace(/[^\d]/g, "");
+   338→   338→                          setBruto(digits);
+   339→   339→                        }}
+   340→   340→                        className={cn(
+   341→   341→                          "pl-9 text-right tnum",
+   342→   342→                          errors.bruto &&
+   343→   343→                            "border-destructive focus-visible:ring-destructive"
+   344→   344→                        )}
+   345→   345→                      />
+   346→   346→                    </div>
+   347→   347→                    {errors.bruto ? (
+   348→   348→                      <p className="text-xs text-destructive">{errors.bruto}</p>
+   349→   349→                    ) : (
+   350→   350→                      <p className="text-xs text-slate-400">
+   351→   351→                        Nilai kotor sebelum pemotongan pajak.
+   352→   352→                      </p>
+   353→   353→                    )}
+   354→   354→                  </div>
+   355→   355→
+   356→   356→                  {/* Category */}
+   357→   357→                  <div className="space-y-2">
+   358→   358→                    <Label className="text-sm font-medium">
+   359→   359→                      Kategori Transaksi
+   360→   360→                      <span className="ml-0.5 text-destructive">*</span>
+   361→   361→                    </Label>
+   362→   362→                    <Select
+   363→   363→                      value={categoryId}
+   364→   364→                      onValueChange={(v) => setCategoryId(v as CategoryId)}
+   365→   365→                    >
+   366→   366→                      <SelectTrigger
+   367→   367→                        className={cn(
+   368→   368→                          "w-full",
+   369→   369→                          errors.category &&
+   370→   370→                            "border-destructive focus:ring-destructive"
+   371→   371→                        )}
+   372→   372→                      >
+   373→   373→                        <SelectValue placeholder="Pilih kategori…" />
+   374→   374→                      </SelectTrigger>
+   375→   375→                      <SelectContent>
+   376→   376→                        <SelectGroup>
+   377→   377→                          <SelectLabel>Jenis Pemotongan PPh</SelectLabel>
+   378→   378→                          {CATEGORIES.map((c) => {
+   379→   379→                            const Icon = CATEGORY_ICON[c.id];
+   380→   380→                            return (
+   381→   381→                              <SelectItem key={c.id} value={c.id}>
+   382→   382→                                <span className="flex items-center gap-2">
+   383→   383→                                  <Icon className="h-4 w-4 text-primary" />
+   384→   384→                                  <span className="font-medium">{c.label}</span>
+   385→   385→                                  <Badge
+   386→   386→                                    variant="secondary"
+   387→   387→                                    className="ml-1 text-[10px] font-normal"
+   388→   388→                                  >
+   389→   389→                                    {c.taxTypeShort}
+   390→   390→                                  </Badge>
+   391→   391→                                </span>
+   392→   392→                              </SelectItem>
+   393→   393→                            );
+   394→   394→                          })}
+   395→   395→                        </SelectGroup>
+   396→   396→                      </SelectContent>
+   397→   397→                    </Select>
+   398→   398→                    {errors.category && (
+   399→   399→                      <p className="text-xs text-destructive">
+   400→   400→                        {errors.category}
+   401→   401→                      </p>
+   402→   402→                    )}
+   403→   403→                    {selectedCategory && (
+   404→   404→                      <div className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50/70 p-3 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-400">
+   405→   405→                        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+   406→   406→                        <span>
+   407→   407→                          <strong className="font-semibold text-slate-700 dark:text-slate-300">
+   408→   408→                            {selectedCategory.taxType}.
+   409→   409→                          </strong>{" "}
+   410→   410→                          {selectedCategory.legalBasis} Tarif dasar{" "}
+   411→   411→                          <strong>{formatRate(selectedCategory.baseRate)}</strong>{" "}
+   412→   412→                          {selectedCategory.dppRate < 1
+   413→   413→                            ? `· DPP ${Math.round(selectedCategory.dppRate * 100)}% × Bruto`
+   414→   414→                            : "· DPP 100% × Bruto"}
+   415→   415→                          .
+   416→   416→                        </span>
+   417→   417→                      </div>
+   418→   418→                    )}
+   419→   419→                  </div>
+   420→   420→
+   421→   421→                  {/* Date */}
+   422→   422→                  <div className="space-y-2">
+   423→   423→                    <Label htmlFor="date" className="text-sm font-medium">
+   424→   424→                      Tanggal Transaksi
+   425→   425→                      <span className="ml-0.5 text-destructive">*</span>
+   426→   426→                    </Label>
+   427→   427→                    <div className="relative">
+   428→   428→                      <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+   429→   429→                      <Input
+   430→   430→                        id="date"
+   431→   431→                        type="date"
+   432→   432→                        value={date}
+   433→   433→                        onChange={(e) => setDate(e.target.value)}
+   434→   434→                        className={cn(
+   435→   435→                          "pl-9",
+   436→   436→                          errors.date &&
+   437→   437→                            "border-destructive focus-visible:ring-destructive"
+   438→   438→                        )}
+   439→   439→                      />
+   440→   440→                    </div>
+   441→   441→                    {errors.date && (
+   442→   442→                      <p className="text-xs text-destructive">{errors.date}</p>
+   443→   443→                    )}
+   444→   444→                  </div>
+   445→   445→
+   446→   446→                  {/* NPWP */}
+   447→   447→                  <div className="space-y-2">
+   448→   448→                    <Label className="text-sm font-medium">
+   449→   449→                      Penerima penghasilan memiliki NPWP?
+   450→   450→                      <span className="ml-0.5 text-destructive">*</span>
+   451→   451→                    </Label>
+   452→   452→                    <RadioGroup
+   453→   453→                      value={npwp}
+   454→   454→                      onValueChange={(v) => setNpwp(v as NpwpStatus)}
+   455→   455→                      className="grid grid-cols-2 gap-3"
+   456→   456→                    >
+   457→   457→                      <label
+   458→   458→                        htmlFor="npwp-yes"
+   459→   459→                        className={cn(
+   460→   460→                          "flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition-all",
+   461→   461→                          npwp === "yes"
+   462→   462→                            ? "border-primary bg-primary/5 ring-1 ring-primary/30"
+   463→   463→                            : "border-slate-200 hover:border-slate-300 dark:border-slate-800 dark:hover:border-slate-700"
+   464→   464→                        )}
+   465→   465→                      >
+   466→   466→                        <RadioGroupItem id="npwp-yes" value="yes" />
+   467→   467→                        <div className="min-w-0">
+   468→   468→                          <div className="flex items-center gap-1.5 text-sm font-medium">
+   469→   469→                            <ShieldCheck className="h-3.5 w-3.5 text-primary" />
+   470→   470→                            Ya, memiliki
+   471→   471→                          </div>
+   472→   472→                          <p className="text-[11px] text-slate-500">
+   473→   473→                            Tarif normal
+   474→   474→                          </p>
+   475→   475→                        </div>
+   476→   476→                      </label>
+   477→   477→                      <label
+   478→   478→                        htmlFor="npwp-no"
+   479→   479→                        className={cn(
+   480→   480→                          "flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition-all",
+   481→   481→                          npwp === "no"
+   482→   482→                            ? "border-amber-500 bg-amber-50 ring-1 ring-amber-400/40 dark:bg-amber-950/30"
+   483→   483→                            : "border-slate-200 hover:border-slate-300 dark:border-slate-800 dark:hover:border-slate-700"
+   484→   484→                        )}
+   485→   485→                      >
+   486→   486→                        <RadioGroupItem id="npwp-no" value="no" />
+   487→   487→                        <div className="min-w-0">
+   488→   488→                          <div className="flex items-center gap-1.5 text-sm font-medium">
+   489→   489→                            <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
+   490→   490→                            Tidak
+   491→   491→                          </div>
+   492→   492→                          <p className="text-[11px] text-slate-500">
+   493→   493→                            Tarif +20% (×1,2)
+   494→   494→                          </p>
+   495→   495→                        </div>
+   496→   496→                      </label>
+   497→   497→                    </RadioGroup>
+   498→   498→                    {npwp === "no" && (
+   499→   499→                      <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">
+   500→   500→                        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+   501→   501→                        <span>
+   502→   502→                          Sesuai PMK-252/PMK.03/2008, tarif pemotongan
+   503→   503→                          ditingkatkan 20% bila penerima tidak memiliki NPWP.
+   504→   504→                        </span>
+   505→   505→                      </div>
+   506→   506→                    )}
+   507→   507→                  </div>
+   508→   508→                </CardContent>
+   509→   509→
+   510→   510→                <CardFooter className="flex flex-col gap-2 border-t border-slate-100 bg-slate-50/60 p-5 dark:border-slate-800 dark:bg-slate-900/40 sm:flex-row sm:items-center sm:justify-between">
+   511→   511→                  <Button
+   512→   512→                    type="button"
+   513→   513→                    variant="ghost"
+   514→   514→                    size="sm"
+   515→   515→                    onClick={handleReset}
+   516→   516→                    className="text-slate-600 dark:text-slate-400"
+   517→   517→                  >
+   518→   518→                    <RefreshCw className="mr-1.5 h-4 w-4" />
+   519→   519→                    Reset
+   520→   520→                  </Button>
+   521→   521→                  <Button
+   522→   522→                    type="submit"
+   523→   523→                    className="w-full bg-primary text-primary-foreground shadow-sm shadow-primary/30 sm:w-auto"
+   524→   524→                  >
+   525→   525→                    <Sparkles className="mr-1.5 h-4 w-4" />
+   526→   526→                    Hitung &amp; Buat Jurnal
+   527→   527→                  </Button>
+   528→   528→                </CardFooter>
+   529→   529→              </form>
+   530→   530→            </Card>
+   531→   531→          </section>
+   532→   532→
+   533→   533→          {/* ───────────── Results ───────────── */}
+   534→   534→          <section id="hasil" className="lg:col-span-3">
+   535→   535→            {result ? (
+   536→   536→              <ResultsView
+   537→   537→                result={result}
+   538→   538→                copied={copied}
+   539→   539→                onCopy={handleCopy}
+   540→   540→              />
+   541→   541→            ) : (
+   542→   542→              <EmptyState />
+   543→   543→            )}
+   544→   544→          </section>
+   545→   545→        </div>
+   546→   546→      </main>
+   547→   547→
+   548→   548→      {/* ───────────────────────── Footer ───────────────────────── */}
+   549→   549→      <footer className="mt-auto border-t border-slate-200/70 bg-white/70 backdrop-blur-sm dark:border-slate-800/70 dark:bg-slate-950/70">
+   550→   550→        <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:px-6">
+   551→   551→          <div className="flex flex-col items-center justify-between gap-2 text-xs text-slate-500 sm:flex-row dark:text-slate-400">
+   552→   552→            <p className="flex items-center gap-1.5">
+   553→   553→              <Landmark className="h-3.5 w-3.5" />
+   554→   554→              TaxJournal Automator — mengacu UU HPP &amp; PMK terkait PPh.
+   555→   555→            </p>
+   556→   556→            <p className="flex items-center gap-1">
+   557→   557→              <Info className="h-3 w-3" />
+   558→   558→              Hasil bersifat estimasi; verifikasi dengan konsultan pajak Anda.
+   559→   559→            </p>
+   560→   560→          </div>
+   561→   561→        </div>
+   562→   562→      </footer>
+   563→   563→    </div>
+   564→   564→  );
+   565→   565→}
+   566→   566→
+   567→   567→/* ─────────────────────────── Empty state ─────────────────────────── */
+   568→   568→function EmptyState() {
+   569→   569→  return (
+   570→   570→    <Card className="flex h-full min-h-[420px] flex-col items-center justify-center border-dashed border-slate-300 bg-white/60 text-center dark:border-slate-700 dark:bg-slate-900/40">
+   571→   571→      <CardContent className="flex max-w-sm flex-col items-center gap-4 p-8">
+   572→   572→        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+   573→   573→          <FileSpreadsheet className="h-8 w-8" />
+   574→   574→        </div>
+   575→   575→        <div className="space-y-1.5">
+   576→   576→          <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100">
+   577→   577→            Belum ada hasil perhitungan
+   578→   578→          </h3>
+   579→   579→          <p className="text-sm leading-relaxed text-slate-500 dark:text-slate-400">
+   580→   580→            Lengkapi formulir di sebelah kiri dan tekan{" "}
+   581→   581→            <span className="font-medium text-primary">Hitung &amp; Buat Jurnal</span>
+   582→   582→            . Hasil DPP, pajak dipotong, neto, dan jurnal akuntansi akan
+   583→   583→            muncul di sini.
+   584→   584→          </p>
+   585→   585→        </div>
+   586→   586→        <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
+   587→   587→          {CATEGORIES.map((c) => (
+   588→   588→            <Badge
+   589→   589→              key={c.id}
+   590→   590→              variant="secondary"
+   591→   591→              className="gap-1 font-normal text-slate-600 dark:text-slate-300"
+   592→   592→            >
+   593→   593→              <span className="font-semibold text-primary">{c.id}</span>
+   594→   594→              {c.taxTypeShort}
+   595→   595→            </Badge>
+   596→   596→          ))}
+   597→   597→        </div>
+   598→   598→      </CardContent>
+   599→   599→    </Card>
+   600→   600→  );
+   601→   601→}
+   602→   602→
+   603→   603→/* ─────────────────────────── Results view ─────────────────────────── */
+   604→   604→function ResultsView({
+   605→   605→  result,
+   606→   606→  copied,
+   607→   607→  onCopy,
+   608→   608→}: {
+   609→   609→  result: TaxResult;
+   610→   610→  copied: boolean;
+   611→   611→  onCopy: () => void;
+   612→   612→}) {
+   613→   613→  const CatIcon = CATEGORY_ICON[result.category.id];
+   614→   614→
+   615→   615→  return (
+   616→   616→    <div className="space-y-5">
+   617→   617→      {/* Summary cards */}
+   618→   618→      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+   619→   619→        <SummaryCard
+   620→   620→          icon={<Wallet className="h-4 w-4" />}
+   621→   621→          label="Dasar Pengenaan Pajak (DPP)"
+   622→   622→          value={formatRupiah(result.dpp)}
+   623→   623→          accent="slate"
+   624→   624→          hint={
+   625→   625→            result.category.dppRate < 1
+   626→   626→              ? `${Math.round(result.category.dppRate * 100)}% × Bruto`
+   627→   627→              : "100% × Bruto"
+   628→   628→          }
+   629→   629→        />
+   630→   630→        <SummaryCard
+   631→   631→          icon={<ReceiptText className="h-4 w-4" />}
+   632→   632→          label="Pajak Dipotong"
+   633→   633→          value={formatRupiah(result.tax)}
+   634→   634→          accent="amber"
+   635→   635→          hint={
+   636→   636→            result.npwpMultiplier !== 1
+   637→   637→              ? `${formatRate(result.baseRate)} × ${result.npwpMultiplier} = ${formatRate(result.effectiveRate)}`
+   638→   638→              : `${formatRate(result.effectiveRate)} × DPP`
+   639→   639→          }
+   640→   640→        />
+   641→   641→        <SummaryCard
+   642→   642→          icon={<Landmark className="h-4 w-4" />}
+   643→   643→          label="Neto Dibayarkan"
+   644→   644→          value={formatRupiah(result.netPaid)}
+   645→   645→          accent="primary"
+   646→   646→          hint="Bruto − Pajak"
+   647→   647→        />
+   648→   648→      </div>
+   649→   649→
+   650→   650→      {/* Journal card */}
+   651→   651→      <Card className="overflow-hidden border-slate-200 shadow-sm dark:border-slate-800">
+   652→   652→        <CardHeader className="border-b border-slate-100 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-900/40">
+   653→   653→          <div className="flex flex-wrap items-start justify-between gap-3">
+   654→   654→            <div className="flex items-start gap-3">
+   655→   655→              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+   656→   656→                <CatIcon className="h-5 w-5" />
+   657→   657→              </div>
+   658→   658→              <div className="min-w-0">
+   659→   659→                <CardTitle className="text-base text-slate-900 dark:text-slate-50">
+   660→   660→                  Jurnal Akuntansi
+   661→   661→                </CardTitle>
+   662→   662→                <CardDescription className="text-xs">
+   663→   663→                  {result.category.label} · {result.category.taxType}
+   664→   664→                </CardDescription>
+   665→   665→              </div>
+   666→   666→            </div>
+   667→   667→            <div className="flex flex-wrap items-center gap-2">
+   668→   668→              <Badge
+   669→   669→                variant="outline"
+   670→   670→                className="gap-1 border-slate-300 text-slate-600 dark:border-slate-700 dark:text-slate-300"
+   671→   671→              >
+   672→   672→                <CalendarDays className="h-3 w-3" />
+   673→   673→                {formatDisplayDate(result.date)}
+   674→   674→              </Badge>
+   675→   675→              <TooltipProvider>
+   676→   676→                <Tooltip>
+   677→   677→                  <TooltipTrigger asChild>
+   678→   678→                    <Badge
+   679→   679→                      variant="outline"
+   680→   680→                      className={cn(
+   681→   681→                        "gap-1",
+   682→   682→                        result.balanced
+   683→   683→                          ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400"
+   684→   684→                          : "border-destructive/40 bg-destructive/10 text-destructive"
+   685→   685→                      )}
+   686→   686→                    >
+   687→   687→                      <Scale className="h-3 w-3" />
+   688→   688→                      {result.balanced ? "Seimbang" : "Tidak Seimbang"}
+   689→   689→                    </Badge>
+   690→   690→                  </TooltipTrigger>
+   691→   691→                  <TooltipContent className="max-w-[220px] text-xs">
+   692→   692→                    Total Debit {formatRupiah(result.totalDebit)} = Total Kredit{" "}
+   693→   693→                    {formatRupiah(result.totalKredit)}
+   694→   694→                  </TooltipContent>
+   695→   695→                </Tooltip>
+   696→   696→              </TooltipProvider>
+   697→   697→            </div>
+   698→   698→          </div>
+   699→   699→        </CardHeader>
+   700→   700→
+   701→   701→        <CardContent className="p-0">
+   702→   702→          {/* Description banner */}
+   703→   703→          <div className="flex items-start gap-2 border-b border-slate-100 bg-white px-5 py-3 dark:border-slate-800 dark:bg-slate-900">
+   704→   704→            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+   705→   705→            <p className="text-xs text-slate-600 dark:text-slate-400">
+   706→   706→              <span className="font-medium text-slate-800 dark:text-slate-200">
+   707→   707→                Deskripsi:
+   708→   708→              </span>{" "}
+   709→   709→              {result.description}
+   710→   710→            </p>
+   711→   711→          </div>
+   712→   712→
+   713→   713→          {/* Journal table */}
+   714→   714→          <div className="scroll-finance max-h-96 overflow-auto">
+   715→   715→            <Table>
+   716→   716→              <TableHeader className="sticky top-0 z-10 bg-slate-50/95 backdrop-blur dark:bg-slate-900/95">
+   717→   717→                <TableRow className="border-slate-200 hover:bg-transparent dark:border-slate-800">
+   718→   718→                  <TableHead className="w-[120px] text-xs font-semibold uppercase tracking-wide text-slate-500">
+   719→   719→                    Tanggal
+   720→   720→                  </TableHead>
+   721→   721→                  <TableHead className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+   722→   722→                    Nama Akun
+   723→   723→                  </TableHead>
+   724→   724→                  <TableHead className="text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
+   725→   725→                    Debit
+   726→   726→                  </TableHead>
+   727→   727→                  <TableHead className="text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
+   728→   728→                    Kredit
+   729→   729→                  </TableHead>
+   730→   730→                </TableRow>
+   731→   731→              </TableHeader>
+   732→   732→              <TableBody>
+   733→   733→                {result.journal.map((entry, idx) => (
+   734→   734→                  <TableRow
+   735→   735→                    key={idx}
+   736→   736→                    className={cn(
+   737→   737→                      "border-slate-100 dark:border-slate-800/70",
+   738→   738→                      entry.debit > 0
+   739→   739→                        ? "bg-blue-50/30 dark:bg-blue-950/10"
+   740→   740→                        : entry.kredit > 0
+   741→   741→                          ? "bg-slate-50/40 dark:bg-slate-900/30"
+   742→   742→                          : ""
+   743→   743→                    )}
+   744→   744→                  >
+   745→   745→                    <TableCell className="whitespace-nowrap py-3 text-xs text-slate-500">
+   746→   746→                      {formatDisplayDate(entry.tanggal)}
+   747→   747→                    </TableCell>
+   748→   748→                    <TableCell className="py-3">
+   749→   749→                      <div className="flex items-center gap-2">
+   750→   750→                        {entry.debit > 0 ? (
+   751→   751→                          <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-blue-100 text-[10px] font-bold text-blue-700 dark:bg-blue-950/50 dark:text-blue-300">
+   752→   752→                            D
+   753→   753→                          </span>
+   754→   754→                        ) : entry.kredit > 0 ? (
+   755→   755→                          <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-slate-200 text-[10px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+   756→   756→                            K
+   757→   757→                          </span>
+   758→   758→                        ) : (
+   759→   759→                          <span className="inline-block h-5 w-5" />
+   760→   760→                        )}
+   761→   761→                        <span className="text-sm font-medium text-slate-800 dark:text-slate-200">
+   762→   762→                          {entry.namaAkun}
+   763→   763→                        </span>
+   764→   764→                      </div>
+   765→   765→                    </TableCell>
+   766→   766→                    <TableCell className="py-3 text-right text-sm tnum text-slate-800 dark:text-slate-200">
+   767→   767→                      {entry.debit ? formatRupiah(entry.debit) : "—"}
+   768→   768→                    </TableCell>
+   769→   769→                    <TableCell className="py-3 text-right text-sm tnum text-slate-800 dark:text-slate-200">
+   770→   770→                      {entry.kredit ? formatRupiah(entry.kredit) : "—"}
+   771→   771→                    </TableCell>
+   772→   772→                  </TableRow>
+   773→   773→                ))}
+   774→   774→              </TableBody>
+   775→   775→              <TableFooter className="sticky bottom-0 bg-slate-100/95 backdrop-blur dark:bg-slate-800/95">
+   776→   776→                <TableRow className="border-slate-200 hover:bg-transparent dark:border-slate-700">
+   777→   777→                  <TableCell colSpan={2} className="text-xs font-bold uppercase tracking-wide text-slate-600 dark:text-slate-300">
+   778→   778→                    Total
+   779→   779→                  </TableCell>
+   780→   780→                  <TableCell className="text-right text-sm font-bold tnum text-slate-900 dark:text-slate-100">
+   781→   781→                    {formatRupiah(result.totalDebit)}
+   782→   782→                  </TableCell>
+   783→   783→                  <TableCell className="text-right text-sm font-bold tnum text-slate-900 dark:text-slate-100">
+   784→   784→                    {formatRupiah(result.totalKredit)}
+   785→   785→                  </TableCell>
+   786→   786→                </TableRow>
+   787→   787→              </TableFooter>
+   788→   788→            </Table>
+   789→   789→          </div>
+   790→   790→        </CardContent>
+   791→   791→
+   792→   792→        <CardFooter className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-900/40 sm:flex-row sm:items-center sm:justify-between">
+   793→   793→          <div className="flex items-center gap-2 text-xs text-slate-500">
+   794→   794→            <Scale className="h-3.5 w-3.5 text-emerald-600" />
+   795→   795→            Debit &amp; Kredit seimbang.{" "}
+   796→   796→            <span className="hidden sm:inline">
+   797→   797→              Selisih Rp 0 — jurnal siap diposting.
+   798→   798→            </span>
+   799→   799→          </div>
+   800→   800→          <Button
+   801→   801→            onClick={onCopy}
+   802→   802→            variant={copied ? "secondary" : "default"}
+   803→   803→            className="w-full bg-primary text-primary-foreground shadow-sm shadow-primary/30 sm:w-auto"
+   804→   804→          >
+   805→   805→            {copied ? (
+   806→   806→              <>
+   807→   807→                <ClipboardCheck className="mr-1.5 h-4 w-4" />
+   808→   808→                Tersalin!
+   809→   809→              </>
+   810→   810→            ) : (
+   811→   811→              <>
+   812→   812→                <ClipboardCopy className="mr-1.5 h-4 w-4" />
+   813→   813→                Copy ke Clipboard (Excel)
+   814→   814→              </>
+   815→   815→            )}
+   816→   816→          </Button>
+   817→   817→        </CardFooter>
+   818→   818→      </Card>
+   819→   819→
+   820→   820→      {/* Formula breakdown */}
+   821→   821→      <Card className="border-slate-200 bg-white shadow-sm dark:border-slate-800">
+   822→   822→        <CardHeader className="border-b border-slate-100 bg-slate-50/60 pb-3 dark:border-slate-800 dark:bg-slate-900/40">
+   823→   823→          <CardTitle className="flex items-center gap-2 text-sm text-slate-900 dark:text-slate-50">
+   824→   824→            <Calculator className="h-4 w-4 text-primary" />
+   825→   825→            Rincian Perhitungan
+   826→   826→          </CardTitle>
+   827→   827→        </CardHeader>
+   828→   828→        <CardContent className="space-y-2.5 p-5 text-sm">
+   829→   829→          <FormulaRow
+   830→   830→            label="Nominal Bruto"
+   831→   831→            value={formatRupiah(result.bruto)}
+   832→   832→          />
+   833→   833→          <Separator className="bg-slate-100 dark:bg-slate-800" />
+   834→   834→          <FormulaRow
+   835→   835→            label="DPP"
+   836→   836→            detail={
+   837→   837→              result.category.dppRate < 1
+   838→   838→                ? `${Math.round(result.category.dppRate * 100)}% × ${formatRupiah(result.bruto)}`
+   839→   839→                : "100% × Bruto"
+   840→   840→            }
+   841→   841→            value={formatRupiah(result.dpp)}
+   842→   842→          />
+   843→   843→          <Separator className="bg-slate-100 dark:bg-slate-800" />
+   844→   844→          <FormulaRow
+   845→   845→            label="Tarif Pemotongan"
+   846→   846→            detail={
+   847→   847→              result.npwpMultiplier !== 1
+   848→   848→                ? `${formatRate(result.baseRate)} × ${result.npwpMultiplier} (tanpa NPWP)`
+   849→   849→                : formatRate(result.baseRate)
+   850→   850→            }
+   851→   851→            value={formatRate(result.effectiveRate)}
+   852→   852→          />
+   853→   853→          <Separator className="bg-slate-100 dark:bg-slate-800" />
+   854→   854→          <FormulaRow
+   855→   855→            label="Pajak Dipotong"
+   856→   856→            detail={`${formatRate(result.effectiveRate)} × ${formatRupiah(result.dpp)}`}
+   857→   857→            value={formatRupiah(result.tax)}
+   858→   858→            emphasize
+   859→   859→          />
+   860→   860→          <Separator className="bg-slate-100 dark:bg-slate-800" />
+   861→   861→          <FormulaRow
+   862→   862→            label="Neto Dibayarkan"
+   863→   863→            detail={`${formatRupiah(result.bruto)} − ${formatRupiah(result.tax)}`}
+   864→   864→            value={formatRupiah(result.netPaid)}
+   865→   865→            emphasize
+   866→   866→          />
+   867→   867→        </CardContent>
+   868→   868→      </Card>
+   869→   869→    </div>
+   870→   870→  );
+   871→   871→}
+   872→   872→
+   873→   873→/* ─────────────────────────── Small pieces ─────────────────────────── */
+   874→   874→const ACCENT_STYLES = {
+   875→   875→  slate: {
+   876→   876→    box: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
+   877→   877→    value: "text-slate-900 dark:text-slate-50",
+   878→   878→  },
+   879→   879→  amber: {
+   880→   880→    box: "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400",
+   881→   881→    value: "text-amber-700 dark:text-amber-400",
+   882→   882→  },
+   883→   883→  primary: {
+   884→   884→    box: "bg-primary/10 text-primary",
+   885→   885→    value: "text-primary",
+   886→   886→  },
+   887→   887→} as const;
+   888→   888→
+   889→   889→function SummaryCard({
+   890→   890→  icon,
+   891→   891→  label,
+   892→   892→  value,
+   893→   893→  hint,
+   894→   894→  accent,
+   895→   895→}: {
+   896→   896→  icon: React.ReactNode;
+   897→   897→  label: string;
+   898→   898→  value: string;
+   899→   899→  hint?: string;
+   900→   900→  accent: keyof typeof ACCENT_STYLES;
+   901→   901→}) {
+   902→   902→  const s = ACCENT_STYLES[accent];
+   903→   903→  return (
+   904→   904→    <Card className="overflow-hidden border-slate-200 shadow-sm dark:border-slate-800">
+   905→   905→      <CardContent className="p-4 sm:p-5">
+   906→   906→        <div className="flex items-center gap-2">
+   907→   907→          <div
+   908→   908→            className={cn(
+   909→   909→              "flex h-8 w-8 items-center justify-center rounded-lg",
+   910→   910→              s.box
+   911→   911→            )}
+   912→   912→          >
+   913→   913→            {icon}
+   914→   914→          </div>
+   915→   915→          <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+   916→   916→            {label}
+   917→   917→          </p>
+   918→   918→        </div>
+   919→   919→        <p
+   920→   920→          className={cn(
+   921→   921→            "mt-3 text-xl font-bold tnum sm:text-2xl",
+   922→   922→            s.value
+   923→   923→          )}
+   924→   924→        >
+   925→   925→          {value}
+   926→   926→        </p>
+   927→   927→        {hint && (
+   928→   928→          <p className="mt-1 text-[11px] text-slate-400">{hint}</p>
+   929→   929→        )}
+   930→   930→      </CardContent>
+   931→   931→    </Card>
+   932→   932→  );
+   933→   933→}
+   934→   934→
+   935→   935→function FormulaRow({
+   936→   936→  label,
+   937→   937→  detail,
+   938→   938→  value,
+   939→   939→  emphasize,
+   940→   940→}: {
+   941→   941→  label: string;
+   942→   942→  detail?: string;
+   943→   943→  value: string;
+   944→   944→  emphasize?: boolean;
+   945→   945→}) {
+   946→   946→  return (
+   947→   947→    <div className="flex items-center justify-between gap-3">
+   948→   948→      <div className="min-w-0">
+   949→   949→        <p
+   950→   950→          className={cn(
+   951→   951→            "text-sm",
+   952→   952→            emphasize
+   953→   953→              ? "font-semibold text-slate-800 dark:text-slate-100"
+   954→   954→              : "text-slate-600 dark:text-slate-300"
+   955→   955→          )}
+   956→   956→        >
+   957→   957→          {label}
+   958→   958→        </p>
+   959→   959→        {detail && (
+   960→   960→          <p className="text-[11px] text-slate-400">{detail}</p>
+   961→   961→        )}
+   962→   962→      </div>
+   963→   963→      <p
+   964→   964→        className={cn(
+   965→   965→          "shrink-0 text-sm tnum",
+   966→   966→          emphasize
+   967→   967→            ? "font-bold text-slate-900 dark:text-slate-50"
+   968→   968→            : "font-medium text-slate-700 dark:text-slate-200"
+   969→   969→        )}
+   970→   970→      >
+   971→   971→        {value}
+   972→   972→      </p>
+   973→   973→    </div>
+   974→   974→  );
+   975→   975→}
+   976→   976→
